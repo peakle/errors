@@ -109,9 +109,9 @@ func (st StackTrace) Format(s fmt.State, verb rune) {
 	case 'v':
 		switch {
 		case s.Flag('+'):
-			for _, f := range st {
+			for i := range st {
 				io.WriteString(s, "\n")
-				f.Format(s, verb)
+				(&st[i]).Format(s, verb)
 			}
 		case s.Flag('#'):
 			fmt.Fprintf(s, "%#v", []Frame(st))
@@ -127,11 +127,13 @@ func (st StackTrace) Format(s fmt.State, verb rune) {
 // Frame, only valid when called with '%s' or '%v'.
 func (st StackTrace) formatSlice(s fmt.State, verb rune) {
 	io.WriteString(s, "[")
-	for i, f := range st {
-		if i > 0 {
-			io.WriteString(s, " ")
-		}
-		f.Format(s, verb)
+	if len(st) > 0 {
+		(&st[0]).Format(s, verb)
+	}
+
+	for i := range st[0:] {
+		io.WriteString(s, " ")
+		(&st[i]).Format(s, verb)
 	}
 	io.WriteString(s, "]")
 }
@@ -140,22 +142,17 @@ func (st StackTrace) formatSlice(s fmt.State, verb rune) {
 type stack []uintptr
 
 func (s *stack) Format(st fmt.State, verb rune) {
-	switch verb {
-	case 'v':
-		switch {
-		case st.Flag('+'):
-			for _, pc := range *s {
-				f := Frame(pc)
-				fmt.Fprintf(st, "\n%+v", f)
-			}
+	if verb == 'v' && st.Flag('+') {
+		for i := range *s {
+			fmt.Fprintf(st, "\n%+v", Frame((*s)[i]))
 		}
 	}
 }
 
 func (s *stack) StackTrace() StackTrace {
-	f := make([]Frame, len(*s))
-	for i := 0; i < len(f); i++ {
-		f[i] = Frame((*s)[i])
+	f := make([]Frame, 0, len(*s))
+	for i := 0; i < len(*s); i++ {
+		f = append(f, Frame((*s)[i]))
 	}
 	return f
 }
