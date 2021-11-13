@@ -1,6 +1,7 @@
 package errors
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"path"
@@ -49,6 +50,8 @@ func (f Frame) name() string {
 	return fn.Name()
 }
 
+func (f Frame) Format(s fmt.State, verb rune) { f.format(s, s, verb) }
+
 // Format formats the frame according to the fmt.Formatter interface.
 //
 //    %s    source file
@@ -61,25 +64,25 @@ func (f Frame) name() string {
 //    %+s   function name and path of source file relative to the compile time
 //          GOPATH separated by \n\t (<funcname>\n\t<path>)
 //    %+v   equivalent to %+s:%d
-func (f Frame) Format(s fmt.State, verb rune) {
+func (f Frame) format(w io.Writer, s fmt.State, verb rune) {
 	switch verb {
 	case 's':
 		switch {
 		case s.Flag('+'):
-			io.WriteString(s, f.name())
-			io.WriteString(s, "\n\t")
-			io.WriteString(s, f.file())
+			io.WriteString(w, f.name())
+			io.WriteString(w, "\n\t")
+			io.WriteString(w, f.file())
 		default:
-			io.WriteString(s, path.Base(f.file()))
+			io.WriteString(w, path.Base(f.file()))
 		}
 	case 'd':
-		io.WriteString(s, strconv.Itoa(f.line()))
+		io.WriteString(w, strconv.Itoa(f.line()))
 	case 'n':
-		io.WriteString(s, funcname(f.name()))
+		io.WriteString(w, funcname(f.name()))
 	case 'v':
-		f.Format(s, 's')
-		io.WriteString(s, ":")
-		f.Format(s, 'd')
+		f.format(w, s, 's')
+		io.WriteString(w, ":")
+		f.format(w, s, 'd')
 	}
 }
 
@@ -141,11 +144,22 @@ func (st StackTrace) formatSlice(s fmt.State, verb rune) {
 // stack represents a stack of program counters.
 type stack []uintptr
 
+// stackMinLen is a best-guess at the minimum length of a stack trace. It
+// doesn't need to be exact, just give a good enough head start for the buffer
+// to avoid the expensive early growth.
+const stackMinLen = 96
+
 func (s *stack) Format(st fmt.State, verb rune) {
 	if verb == 'v' && st.Flag('+') {
+		var b = &bytes.Buffer{}
+		b.Grow(len(*s) * stackMinLen)
+
 		for i := range *s {
-			fmt.Fprintf(st, "\n%+v", Frame((*s)[i]))
+			b.WriteByte('\n')
+			Frame((*s)[i]).format(b, st, verb)
 		}
+
+		io.Copy(st, b)
 	}
 }
 
